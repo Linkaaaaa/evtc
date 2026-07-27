@@ -259,6 +259,8 @@ namespace GW2Scratch.ArcdpsLogManager.Logs.Updates
 				                         or Encounter.AiKeeperOfThePeakDayAndNight or Encounter.Freezie
 				                         or Encounter.SoullessHorror),
 				"Fixed success and CM detection for the 2024-04-30 arcdps update."),
+			new LogUpdate(log => log.ParsingVersion < new Version(1, 16, 1, 0),
+				"Fixed commander tag detection across all logs."),
 			// When adding a new update, you need to increase the revision (last value) of the version in the .csproj file
 			// unless the version changes more significantly, in that case it can be reset to 0.
 		};
