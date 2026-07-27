@@ -1,9 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Text;
 using GW2Scratch.ArcdpsLogManager.Analytics;
 using GW2Scratch.ArcdpsLogManager.Logs.Extras;
 using GW2Scratch.ArcdpsLogManager.Logs.Tagging;
@@ -11,10 +5,17 @@ using GW2Scratch.EVTCAnalytics.Events;
 using GW2Scratch.EVTCAnalytics.GameData;
 using GW2Scratch.EVTCAnalytics.GameData.Encounters;
 using GW2Scratch.EVTCAnalytics.Model.Agents;
+using GW2Scratch.EVTCAnalytics.Parsed.Enums;
 using GW2Scratch.EVTCAnalytics.Processing.Encounters.Modes;
 using GW2Scratch.EVTCAnalytics.Processing.Encounters.Results;
 using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Text;
 
 namespace GW2Scratch.ArcdpsLogManager.Logs
 {
@@ -261,7 +262,11 @@ namespace GW2Scratch.ArcdpsLogManager.Logs
 				GameLanguage = log.GameLanguage;
 				GameBuild = log.GameBuild;
 				EvtcVersion = log.EvtcVersion;
-				PointOfView = new PointOfView { AccountName = log.PointOfView?.AccountName ?? "Unknown", CharacterName = log.PointOfView?.Name ?? "Unknown" };
+				PointOfView = new PointOfView
+				{
+					AccountName = log.PointOfView?.AccountName ?? "Unknown",
+					CharacterName = log.PointOfView?.Name ?? "Unknown"
+				};
 				Encounter = log.EncounterData.Encounter;
 				MapId = log.MapId;
 				MainTargetName = log.MainTarget?.Name ?? UnknownMainTargetName;
@@ -273,14 +278,30 @@ namespace GW2Scratch.ArcdpsLogManager.Logs
 					HealthPercentage = 0;
 				}
 
-				var tagEvents = log.Events.OfType<AgentMarkerEvent>().Where(x => x.Agent is Player).ToList();
-				Players = analyzer.GetPlayers().Where(x => x.Identified).Select(p =>
-					new LogPlayer(p.Name, p.AccountName, p.Subgroup, p.Profession, p.EliteSpecialization,
-						GetGuildGuid(p.GuildGuid))
+				var tagEvents = log.Events.OfType<AgentMarkerEvent>()
+					.SelectMany<AgentMarkerEvent, (AgentMarkerEvent, CommanderTags)>(x =>
 					{
-						Tag = tagEvents.Any(e => e.Agent == p && e.IsCommander.GetValueOrDefault(true)) ? PlayerTag.Commander : PlayerTag.None
-					}
-				).ToArray();
+						if (x.Agent is Player &&
+						    CommanderTagGUIDs.Tags.TryGetValue(ContentLocal.GetGuid(x.Marker.ContentGuid
+						    ), out var tag))
+						{
+							return [(x, tag)];
+						}
+
+						return [];
+					}).ToArray();
+				var logPlayers = analyzer.GetPlayers().Where(x => x.Identified)
+					.Select(p =>
+					{
+						(AgentMarkerEvent ev, CommanderTags tag) = tagEvents.FirstOrDefault(x => x.Item1.Agent == p);
+						return new LogPlayer(p.Name, p.AccountName, p.Subgroup, p.Profession, p.EliteSpecialization,
+							GetGuildGuid(p.GuildGuid))
+						{
+							Tag = ev != null ? PlayerTag.Commander : PlayerTag.None, TagType = tag
+						};
+					}).ToArray();
+
+				Players = logPlayers;
 
 				if (log.StartTime != null)
 				{
@@ -294,9 +315,13 @@ namespace GW2Scratch.ArcdpsLogManager.Logs
 				LogExtras = new LogExtras();
 
 				var mistlockInstabilities = logAnalytics.FractalInstabilityDetector.GetInstabilities(log).ToList();
-				if (Encounter.GetEncounterCategory() == EncounterCategory.Fractal || mistlockInstabilities.Count > 0 || log.FractalScale != null)
+				if (Encounter.GetEncounterCategory() == EncounterCategory.Fractal || mistlockInstabilities.Count > 0 ||
+				    log.FractalScale != null)
 				{
-					LogExtras.FractalExtras = new FractalExtras { MistlockInstabilities = mistlockInstabilities, FractalScale = log.FractalScale, };
+					LogExtras.FractalExtras = new FractalExtras
+					{
+						MistlockInstabilities = mistlockInstabilities, FractalScale = log.FractalScale,
+					};
 				}
 
 				EncounterDuration = analyzer.GetEncounterDuration();
